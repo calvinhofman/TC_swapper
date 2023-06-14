@@ -61,6 +61,22 @@
                     <p>live</p>
                   </div>
                 </div>
+                <p class="font-semibold mt-4">wallet Info:</p>
+                <div class="flex flex-col w-full justify-between">
+                  <div class="flex flex-row justify-between">
+                    <p>total USD: </p>
+                    <p>{{ totalUSD }}</p>
+                  </div>
+                  <div class="flex flex-row justify-between">
+                    <p>total Tokens: </p>
+                    <p>{{ totalTokens }} </p>
+                  </div>
+                  <div class="flex flex-row justify-between">
+                    <p>Has claimed: </p>
+                    <p>{{ hasClaimed }}</p>
+                  </div>
+
+                </div>
                 <div class="flex flex-col sm:flex-row sm:justify-center items-center">
                   <div>
                     Powered by <a href="https://metalabz.gg">MetaLabz</a>
@@ -84,7 +100,7 @@
 /* wallet connect config */
 import { EthereumClient, w3mConnectors, w3mProvider } from '@web3modal/ethereum'
 import { Web3Modal } from '@web3modal/html'
-import { configureChains, createConfig, prepareWriteContract, writeContract, watchAccount, readContract, getAccount, fetchBalance } from '@wagmi/core'
+import { configureChains, createConfig, prepareWriteContract, writeContract, waitForTransaction, watchAccount, readContract, getAccount, fetchBalance } from '@wagmi/core'
 
 
 import { bsc } from '@wagmi/core/chains'
@@ -169,7 +185,11 @@ export default {
       isapprovedBUSD: null,
       isapprovedUSDC: null,
       isapprovedUSDT: null,
+      realAmount:null,
       bnbAmount: null,
+      totalUSD: null,
+      totalTokens: null,
+      hasClaimed: null,
       options: [
         {
           value: "0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56",
@@ -180,19 +200,16 @@ export default {
           value: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
           coin: "USDC",
           label: "USDC"
-
         },
         {
           value: "bnb",
           coin: "BNB",
           label: "BNB"
-
         },
         {
           value: "0x55d398326f99059fF775485246999027B3197955",
           coin: "BSC-USD",
           label: "BSC-USD"
-
         },
       ],
     };
@@ -291,11 +308,24 @@ export default {
         args: [this.userWallet, contractAddress]
       })
 
+
+      let buyerInfo = await readContract({
+        address: contractAddress,
+        abi: tokenABI,
+        functionName: 'userBuys',
+        args: [this.userWallet]
+      })
+
+      console.log(buyerInfo)
+
       console.log(this.isapprovedBUSD.toString())
       console.log(this.isapprovedBSC.toString())
       console.log(this.isapprovedUSDC.toString())
 
 
+      this.totalUSD =(buyerInfo[0].toString() / Math.pow(10, 18))
+      this.totalTokens = (buyerInfo[1].toString() / Math.pow(10, 18))
+      this.hasClaimed = buyerInfo[2].toString()
       this.totalSold = this.formatNumber(Web3.utils.fromWei(this.totalSold, 'ether'))
       let formatted = Web3.utils.fromWei(this.totalUSDInvested, 'ether')
       this.totalUSDInvested = this.formatNumber(formatted)
@@ -335,17 +365,26 @@ export default {
       if (option.value == 'bnb') {
         this.balanceOfToken = this.bnbAmount.formatted;
         console.log(this.balanceOfToken)
-
+        this.realAmount = this.bnbAmount.value.toString()
+        console.log(this.realAmount.toString())
       }
     },
 
     setMaximumAmount() {
-      this.amountUSD = parseFloat(this.balanceOfToken - 0.005); // Update amountUSD with the input value
+      if(this.selectedOption.value == 'bnb') {
+        this.amountUSD = this.balanceOfToken - 0.005;
+      } else {
+        this.amountUSD = this.balanceOfToken;
+      }
+      this.realAmount = (this.balanceOfToken - 0.005 )  *  Math.pow(10, 18)
+      console.log(this.realAmount)
 
     },
 
     setAmountUSD(event) {
-      this.amountUSD = parseFloat(event.target.value); // Update amountUSD with the input value
+      this.amountUSD = event.target.value; // Update amountUSD with the input value
+      this.realAmount = (event.target.value )  *  Math.pow(10, 18)
+      console.log(this.realAmount)
     },
 
     formatNumber(num) {
@@ -355,14 +394,21 @@ export default {
     async depositTokens() {
 
       if (this.isapprovedBUSD > 0 && this.selectedOption.value === '0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56') {
-        console.log(this.amountUSD)
+        this.showAlertBox('process', '');
+
         try {
+
           const { hash } = await writeContract({
             address: contractAddress,
             abi: tokenABI,
             functionName: 'buyTokens',
             args: [Web3.utils.toWei(this.amountUSD, 'ether'), this.selectedOption.value],
           })
+          const data = await waitForTransaction({ confirmations: 2, hash, })
+
+
+
+
           this.showAlertBox('success', 'tokens bought was successful');
 
           console.log(hash)
@@ -374,6 +420,8 @@ export default {
         }
       } else if (this.isapprovedBUSD == 0 && this.selectedOption.value === '0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56') {
         try {
+        this.showAlertBox('process', '');
+
           const { hash } = await writeContract({
             address: contractAddressBUSD,
             abi: stableABI,
@@ -391,6 +439,8 @@ export default {
       }
       if (this.isapprovedBSC > 0 && this.selectedOption.value === '0x55d398326f99059fF775485246999027B3197955') {
         console.log(this.amountUSD)
+        this.showAlertBox('process', '');
+
         try {
           const { hash } = await writeContract({
             address: contractAddress,
@@ -398,6 +448,7 @@ export default {
             functionName: 'buyTokens',
             args: [Web3.utils.toWei(this.amountUSD, 'ether'), this.selectedOption.value],
           })
+
           console.log(hash)
           this.showAlertBox('success', 'tokens bought was successful');
 
@@ -407,6 +458,8 @@ export default {
 
         }
       } else if (this.isapprovedBSC == 0 && this.selectedOption.value === '0x55d398326f99059fF775485246999027B3197955') {
+        this.showAlertBox('process', '');
+
         try {
           const { hash } = await writeContract({
             address: contractAddressBSC,
@@ -427,6 +480,8 @@ export default {
 
       if (this.isapprovedBSC > 0 && this.selectedOption.value === '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d') {
         console.log(this.amountUSD)
+        this.showAlertBox('process', '');
+
         try {
           const { hash } = await writeContract({
             address: contractAddress,
@@ -443,6 +498,8 @@ export default {
 
         }
       } else if (this.isapprovedBSC == 0 && this.selectedOption.value === '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d') {
+        this.showAlertBox('process', '');
+
         try {
           const { hash } = await writeContract({
             address: contractAddressUSDC,
@@ -459,14 +516,15 @@ export default {
         }
       }
       if (this.selectedOption.value === 'bnb') {
-        console.log(this.amountUSD)
-        console.log('dfghjkahfljkadf')
+        this.showAlertBox('process', '');
+
         try {
           const { hash } = await writeContract({
             address: contractAddress,
             abi: tokenABI,
             functionName: 'buyTokens',
-            args: [this.amountUSD, '0x0000000000000000000000000000000000000000'],
+            args: [0, '0x0000000000000000000000000000000000000000'],
+            value: this.realAmount
           })
           this.showAlertBox('success', 'tokens bought was successful');
 
@@ -495,6 +553,8 @@ export default {
     },
 
     async withdrawTokens() {
+      this.showAlertBox('process', '');
+
       try {
         const { hash } = await writeContract({
           address: contractAddress,
